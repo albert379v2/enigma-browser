@@ -1,6 +1,6 @@
 {
   "name": "enigma-browser",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "Enigma - Multi-session privacy container browser",
   "productName": "Enigma",
   "main": "src/main.js",

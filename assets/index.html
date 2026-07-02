@@ -76,6 +76,8 @@
   --t1:#1a1230;--t2:#4a3d72;--t3:#8b7fb8;--t4:#c4b8e8;
   --glass:rgba(255,255,255,.82);--glass-2:rgba(255,255,255,.68);
   --glow:rgba(124,58,237,.18);
+  --acc3:#6d28d9;
+  --grad-text:linear-gradient(135deg,#1a1230 0%,#4a3d72 45%,#7c3aed 100%);
   --shadow-sm:0 2px 12px rgba(100,70,200,.1);
   --shadow-md:0 12px 36px rgba(100,70,200,.14);
   --shadow-lg:0 24px 56px rgba(100,70,200,.18);
@@ -765,8 +767,47 @@ html[data-theme-pick="light"] .nt-bg{background-color:#f4f2ff}
 [data-theme="light"] .tab.act{background:rgba(255,255,255,.88);box-shadow:0 -2px 12px rgba(100,70,200,.08),inset 0 1px 0 rgba(255,255,255,.9)}
 [data-theme="light"] .chrome{background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(246,244,255,.9));border-bottom-color:rgba(120,90,200,.12)}
 [data-theme="light"] .tabrow-sep{background:linear-gradient(180deg,transparent,rgba(120,90,200,.15) 30%,rgba(120,90,200,.15) 70%,transparent)}
-[data-theme="light"] .nt-clock{filter:none;-webkit-text-fill-color:var(--t1);color:var(--t1)}
-[data-theme="light"] .sc-title{-webkit-text-fill-color:var(--t1)}
+[data-theme="light"] .sc-title,
+[data-theme="light"] .nt-clock{
+  background:none;-webkit-background-clip:unset;background-clip:unset;
+  -webkit-text-fill-color:var(--t1);color:var(--t1);filter:none;
+}
+[data-theme="light"] .sc-row:hover{background:rgba(100,70,200,.08)}
+[data-theme="light"] .cm:hover{background:rgba(100,70,200,.08)}
+[data-theme="light"] .s-row{background:rgba(255,255,255,.72)}
+[data-theme="light"] .theme-opt{background:rgba(255,255,255,.55)}
+[data-theme="light"] .theme-opt.sel{color:var(--acc2)}
+[data-theme="light"] .psearch{background:rgba(255,255,255,.78);color:var(--t1)}
+[data-theme="light"] .notes-area{background:rgba(255,255,255,.78);color:var(--t1)}
+[data-theme="light"] .ph{background:rgba(255,255,255,.55)}
+[data-theme="light"] .panel{background:rgba(255,255,255,.94)}
+[data-theme="light"] .shortcuts-overlay{background:rgba(20,15,40,.42)}
+[data-theme="light"] .overlay{background:rgba(20,15,40,.38)}
+[data-theme="light"] .sc-section{color:var(--acc2)}
+[data-theme="light"] .nt-brand-name{color:var(--acc2)}
+[data-theme="light"] .kbd{color:var(--t1);background:var(--s3);box-shadow:0 2px 0 var(--b2)}
+[data-theme="light"] .cm-key{color:var(--t2)}
+[data-theme="light"] .cm-head{color:var(--t2)}
+[data-theme="light"] .s-sec-title{color:var(--t2)}
+[data-theme="light"] .dli-btn:hover{background:rgba(100,70,200,.1)}
+[data-theme="light"] .ub:hover{background:rgba(100,70,200,.08)}
+[data-theme="light"] .nb:hover:not(:disabled),[data-theme="light"] .tb-act:hover{background:var(--s3)}
+[data-theme="light"] .tab:not(.act):hover{background:rgba(100,70,200,.06)}
+[data-theme="light"] .sp:not(.act):hover,[data-theme="light"] .up:not(.act):hover{background:rgba(100,70,200,.06)}
+[data-theme="light"] .find-inp{background:var(--s2);color:var(--t1)}
+[data-theme="light"] .fbtn{color:var(--t2)}
+[data-theme="light"] .fbtn:hover{color:var(--t1)}
+[data-theme="light"] .statusbar{background:rgba(255,255,255,.88)}
+[data-theme="light"] .toast{background:rgba(255,255,255,.94);color:var(--t1)}
+[data-theme="light"] .sess-dash-card{background:rgba(255,255,255,.94)}
+[data-theme="light"] .modal{background:rgba(255,255,255,.96)}
+[data-theme="light"] .onboarding-card{background:rgba(255,255,255,.96)}
+[data-theme="light"] .site-info{background:rgba(255,255,255,.96)}
+[data-theme="light"] .cmenu{background:rgba(255,255,255,.96)}
+[data-theme="light"] .sc-card{background:rgba(255,255,255,.96)}
+[data-theme="light"] .sg-t,[data-theme="light"] .sg-s{color:var(--t1)}
+[data-theme="light"] .sg-s{color:var(--t2)}
+[data-theme="light"] #st-shield{color:var(--acc2);background:rgba(100,70,200,.08);border-color:rgba(100,70,200,.18)}
 :focus-visible{outline:2px solid var(--acc3);outline-offset:2px}
 button:focus:not(:focus-visible),input:focus:not(:focus-visible){outline:none}
 @media (prefers-reduced-motion:reduce){
@@ -2748,7 +2789,7 @@ const B = (() => {
           <div class="dli-name" title="${esc(dl.filename)}">${esc(dl.filename)}</div>
           <div class="dli-sz">${done?'Done':fail?'Failed':Math.round(pct*100)+'% · '+(dl.received/1048576).toFixed(1)+' MB'}</div>
         </div>
-        ${done?`<button class="dli-btn" onclick="eAPI.openFile('${esc(dl.path)}')" title="Open file">📂</button>`:''}
+        ${done?`<button class="dli-btn" onclick="B.openDownload(${dl.id})" title="Open file">📂</button>`:''}
       </div>`;
     }).join('');
   }
@@ -2760,10 +2801,14 @@ const B = (() => {
           <div class="pi-ttl">${esc(dl.filename)}</div>
           <div class="pi-sub">${dl.state==='completed'?'Completed':dl.state==='interrupted'?'Failed':Math.round(dl.total?dl.received/dl.total*100:0)+'%'}</div>
         </div>
-        ${dl.state==='completed'?`<button class="pa" onclick="eAPI.openFile('${esc(dl.path)}')">📂</button>`:''}
+        ${dl.state==='completed'?`<button class="pa" onclick="B.openDownload(${dl.id})">📂</button>`:''}
       </div>`).join(''):`<div class="pempty">No downloads yet</div>`;
   }
   function closeDlBar() { $('dlbar').classList.remove('open'); }
+  function openDownload(id) {
+    const dl = downloads.find(x => x.id === id);
+    if (dl?.path) eAPI.openFile(dl.path);
+  }
 
   // ── PRINT / DEVTOOLS ─────────────────────────────────────────────────────
   function printPage()   { const wv=getWV(activeTid[activePid]); closeMenu(); if(wv) wv.print(); }
@@ -4018,7 +4063,7 @@ const B = (() => {
     toggleBookmark, renderBM,
     loadHistory, renderHist, clearHistory,
     openFind, closeFind, doFind, findNext, findPrev, findKey,
-    closeDlBar, renderDlBar, renderDlPanel,
+    closeDlBar, renderDlBar, renderDlPanel, openDownload,
     openDevTools, printPage,
     toggleReading, closeReading,
     togglePanel, closePanel,
