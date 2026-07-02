@@ -48,9 +48,29 @@ function isVersionNewer(latest, current) {
   return false;
 }
 
+function decodeHtmlEntities(text) {
+  return String(text || '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+}
+
+function htmlToPlainText(input) {
+  return decodeHtmlEntities(String(input || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/h[1-6]>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<[^>]+>/g, ''));
+}
+
 function releaseNotesSnippet(body, maxLen = 220) {
   if (!body) return '';
-  const text = String(body)
+  const text = htmlToPlainText(body)
     .replace(/^#+\s+/gm, '')
     .replace(/\*\*/g, '')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
@@ -59,7 +79,7 @@ function releaseNotesSnippet(body, maxLen = 220) {
     .map(l => l.trim())
     .filter(Boolean)
     .slice(0, 4)
-    .join(' ');
+    .join(' · ');
   if (!text) return '';
   return text.length > maxLen ? `${text.slice(0, maxLen - 1)}…` : text;
 }
