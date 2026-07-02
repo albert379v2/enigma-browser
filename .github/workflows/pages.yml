@@ -3,10 +3,6 @@ name: Deploy website
 on:
   push:
     branches: [main, master]
-    paths:
-      - 'website/**'
-      - 'scripts/generate-downloads-manifest.mjs'
-      - 'package.json'
   workflow_dispatch:
 
 permissions:
