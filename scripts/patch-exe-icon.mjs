@@ -1,3 +1,6 @@
+/**
+ * Post-build fallback: patch unpacked exe (afterPack embeds icon before NSIS/portable).
+ */
 import { existsSync } from 'fs';
 import { join, resolve } from 'path';
 import { rcedit } from 'rcedit';
@@ -8,8 +11,6 @@ const icon = join(root, 'assets', 'icons', 'icon.ico');
 const targets = [
   join(root, 'dist', 'win-unpacked', 'Enigma.exe'),
   join(root, 'dist2', 'win-unpacked', 'Enigma.exe'),
-  join(root, 'dist', 'win-unpacked', 'Enigma Browser.exe'),
-  join(root, 'dist2', 'win-unpacked', 'Enigma Browser.exe'),
   join(root, 'node_modules', 'electron', 'dist', 'electron.exe'),
 ];
 

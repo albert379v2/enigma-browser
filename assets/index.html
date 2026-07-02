@@ -3503,6 +3503,7 @@ const B = (() => {
   function showOnboarding(reg) {
     $('app').classList.add('onboarding-pending');
     $('ob-logo').src = APP_ICON_SVG;
+    eAPI.appIconUrl().then(url => { if (url) $('ob-logo').src = url; }).catch(() => {});
     $('ob-version').textContent = `Enigma ${reg.appVersion || ''} — set up on this device`;
     selColor = COLORS[Math.floor(Math.random() * COLORS.length)];
     renderObSwatches();
@@ -3621,6 +3622,7 @@ const B = (() => {
     settings = { ...defaults, ...(settings && typeof settings === 'object' ? settings : {}) };
     privacyDoc = { filterLists: true, fingerprintProtection: true, webrtcProtection: true, mixedContentBlock: false, siteExceptions: {}, ...(privacyDoc || {}) };
     $('tb-logo-img').src = APP_ICON_SVG;
+    eAPI.appIconUrl().then(url => { if (url) $('tb-logo-img').src = url; }).catch(() => {});
     applyTheme(settings.theme||'dark');
     applyCompactTabs();
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {

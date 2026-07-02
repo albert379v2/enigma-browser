@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('eAPI', {
   openExternal: (u) => ipcRenderer.invoke('open-external', u),
   clipboard: (t) => ipcRenderer.invoke('clipboard', t),
   appVersion: () => ipcRenderer.invoke('app-version'),
+  appIconUrl: () => ipcRenderer.invoke('app-icon-url'),
   checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
   chromiumVersion: () => ipcRenderer.invoke('chromium-version'),
   electronVersion: () => ipcRenderer.invoke('electron-version'),

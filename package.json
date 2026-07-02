@@ -1,6 +1,6 @@
 {
   "name": "enigma-browser",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Enigma - Multi-session privacy container browser",
   "productName": "Enigma",
   "main": "src/main.js",
@@ -34,6 +34,14 @@
     "directories": {
       "output": "dist"
     },
+    "afterPack": "scripts/after-pack-icon.mjs",
+    "extraResources": [
+      {
+        "from": "assets/icons",
+        "to": "icons",
+        "filter": ["icon.ico", "icon.png", "icon_128.png", "icon_256.png", "icon_64.png", "icon_48.png", "icon_32.png"]
+      }
+    ],
     "files": [
       "src/**/*",
       "assets/**/*",

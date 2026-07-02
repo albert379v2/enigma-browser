@@ -189,8 +189,33 @@ function setActiveUser(userId) {
   appSettings = getSettings();
   applySessionPolicy(session.fromPartition(mainPartition(userId)));
 }
-const ICON_PATH = path.join(__dirname, '../assets/icons/icon.ico');
-const APP_ICON  = nativeImage.createFromPath(ICON_PATH);
+function loadAppIcon() {
+  const candidates = [];
+  if (app.isPackaged) {
+    candidates.push(
+      path.join(process.resourcesPath, 'icons', 'icon.ico'),
+      path.join(process.resourcesPath, 'icons', 'icon.png'),
+      path.join(process.resourcesPath, 'icons', 'icon_256.png'),
+      path.join(process.resourcesPath, 'icons', 'icon_128.png'),
+    );
+  }
+  candidates.push(
+    path.join(__dirname, '../assets/icons/icon.ico'),
+    path.join(__dirname, '../assets/icons/icon.png'),
+    path.join(__dirname, '../assets/icons/icon_256.png'),
+    path.join(__dirname, '../assets/icons/icon_128.png'),
+  );
+  for (const iconPath of candidates) {
+    try {
+      if (!fs.existsSync(iconPath)) continue;
+      const img = nativeImage.createFromPath(iconPath);
+      if (!img.isEmpty()) return img;
+    } catch {}
+  }
+  return nativeImage.createEmpty();
+}
+
+const APP_ICON = loadAppIcon();
 
 const DEFAULT_SETTINGS = {
   homepage: 'https://google.com',
@@ -792,6 +817,28 @@ ipcMain.handle('open-external', (_, u) => {
 });
 ipcMain.handle('clipboard', (_, t) => clipboard.writeText(t));
 ipcMain.handle('app-version', () => app.getVersion());
+ipcMain.handle('app-icon-url', () => {
+  const candidates = [];
+  if (app.isPackaged) {
+    candidates.push(
+      path.join(process.resourcesPath, 'icons', 'icon_256.png'),
+      path.join(process.resourcesPath, 'icons', 'icon_128.png'),
+      path.join(process.resourcesPath, 'icons', 'icon.png'),
+      path.join(process.resourcesPath, 'icons', 'icon.ico'),
+    );
+  }
+  candidates.push(
+    path.join(__dirname, '../assets/icons/icon_256.png'),
+    path.join(__dirname, '../assets/icons/icon_128.png'),
+    path.join(__dirname, '../assets/icons/icon.png'),
+  );
+  for (const iconPath of candidates) {
+    if (fs.existsSync(iconPath)) {
+      return `file://${iconPath.replace(/\\/g, '/')}`;
+    }
+  }
+  return null;
+});
 ipcMain.handle('chromium-version', () => process.versions.chrome);
 ipcMain.handle('electron-version', () => process.versions.electron);
 
