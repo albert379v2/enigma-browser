@@ -122,13 +122,13 @@ function emptySessionSeed(color = '#8b5cf6') {
 function seedUserFiles(userId, { color }) {
   const paths = userPaths(userId);
   if (!migrateLegacyIntoUser(userId)) {
-    write(paths.settings, { ...DEFAULT_SETTINGS, restoreSession: true });
+    write(paths.settings, { ...DEFAULT_SETTINGS, restoreSession: false });
     write(paths.history, []);
     write(paths.bookmarks, []);
     write(paths.session, emptySessionSeed(color));
     try { fs.writeFileSync(paths.notes, ''); } catch {}
   } else if (!fs.existsSync(paths.settings)) {
-    write(paths.settings, { ...DEFAULT_SETTINGS, restoreSession: true });
+    write(paths.settings, { ...DEFAULT_SETTINGS, restoreSession: false });
   }
 }
 
@@ -197,7 +197,7 @@ const DEFAULT_SETTINGS = {
   httpsOnly: false,
   doNotTrack: true,
   blockPopups: true,
-  restoreSession: true,
+  restoreSession: false,
 };
 
 const read  = (p, fb) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return fb; } };

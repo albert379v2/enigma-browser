@@ -435,6 +435,20 @@ html.compact-tabs .navbar{gap:4px;padding:3px 8px 4px}
 }
 .update-banner .ubtn:hover{filter:brightness(1.06)}
 .update-banner .ubtn-x{background:none;border:none;color:var(--t3);cursor:pointer;padding:4px 8px;font-size:14px;line-height:1}
+.restore-banner{
+  display:none;align-items:center;gap:10px;padding:8px 14px;flex-shrink:0;
+  background:linear-gradient(90deg,rgba(139,92,246,.18),rgba(124,58,237,.08));
+  border-bottom:1px solid rgba(139,92,246,.22);font-size:12px;color:var(--t1);
+}
+.restore-banner.show{display:flex}
+.restore-banner strong{color:#c4b5fd}
+.restore-banner .rbtn{
+  margin-left:auto;padding:6px 14px;border-radius:8px;border:none;cursor:pointer;
+  background:linear-gradient(135deg,#7c3aed,#8b5cf6);color:#fff;font-weight:700;font-size:11px;white-space:nowrap;
+}
+.restore-banner .rbtn:hover{filter:brightness(1.08)}
+.restore-banner .rbtn-ghost{background:rgba(255,255,255,.06);color:var(--t2);border:1px solid var(--bdr);font-weight:600}
+.restore-banner .rbtn-x{background:none;border:none;color:var(--t3);cursor:pointer;padding:4px 8px;font-size:14px;line-height:1}
 .dlbar.open{transform:translateY(0)}
 .dli{display:flex;align-items:center;gap:8px;background:var(--s3);border-radius:var(--r);padding:7px 10px;min-width:200px;max-width:260px;flex-shrink:0;position:relative;overflow:hidden}
 .dli-prog{position:absolute;left:0;top:0;bottom:0;background:rgba(144,97,249,.1);transition:width .3s;pointer-events:none}
@@ -795,6 +809,13 @@ button:focus:not(:focus-visible),input:focus:not(:focus-visible){outline:none}
       </div>
     </div>
 
+    <div class="restore-banner" id="restore-banner">
+      <span>↩ You have <strong id="restore-count">0</strong> page(s) from your last visit. Restore them?</span>
+      <button type="button" class="rbtn" onclick="B.restorePreviousPages()">Restore pages</button>
+      <button type="button" class="rbtn rbtn-ghost" onclick="B.dismissRestore()">Start fresh</button>
+      <button type="button" class="rbtn-x" onclick="B.dismissRestore()" title="Dismiss">✕</button>
+    </div>
+
     <div class="update-banner" id="update-banner">
       <span>⬆ Update available — Enigma <strong id="update-ver">1.1.2</strong> is ready. Please update for privacy fixes and new features.</span>
       <button type="button" class="ubtn" onclick="B.downloadUpdate()">Download update</button>
@@ -1152,7 +1173,8 @@ const B = (() => {
   let newtabs   = {};
   let bookmarks = [];
   let history   = [];
-  let settings  = {homepage:'https://google.com',searchEngine:'google',theme:'dark',showClock:true,compactTabs:false,blockTrackers:true,httpsOnly:false,doNotTrack:true,blockPopups:true,restoreSession:true};
+  let settings  = {homepage:'https://google.com',searchEngine:'google',theme:'dark',showClock:true,compactTabs:false,blockTrackers:true,httpsOnly:false,doNotTrack:true,blockPopups:true,restoreSession:false};
+  let pendingRestoreSession = null;
   let zoom      = 1.0;
   let ephem     = false;
   let selColor  = COLORS[0];
@@ -2143,7 +2165,6 @@ const B = (() => {
   }
 
   function saveSessionState() {
-    if (settings.restoreSession === false) return;
     for (const p of profiles) sanitizeTabsForProfile(p.id);
     const snap = {};
     const savedActiveTid = {};
@@ -2160,22 +2181,35 @@ const B = (() => {
     });
   }
 
-  async function restoreSessionState() {
-    if (settings.restoreSession === false) return;
-    const s = await eAPI.sessionLoad();
-    if (!s) return;
-    if (Array.isArray(s.profiles) && s.profiles.length) {
-      profiles = s.profiles.map(p => ({ ...p }));
-      for (const p of profiles) {
-        if (!p.partition) await ensurePartition(p);
-      }
+  function countRestorableTabs(s) {
+    if (!s?.tabsByPid) return 0;
+    let n = 0;
+    for (const list of Object.values(s.tabsByPid)) {
+      if (!Array.isArray(list)) continue;
+      n += list.filter(t => t?.url && !t.url.startsWith('about:')).length;
     }
-    tabsByPid = { default: [] };
-    activeTid = { default: null };
-    if (!s.tabsByPid) {
-      for (const p of profiles) ensureSessionTabs(p.id);
-      return;
-    }
+    return n;
+  }
+
+  function sessionHasRestorablePages(s) {
+    return countRestorableTabs(s) > 0;
+  }
+
+  function hideRestoreBanner() {
+    $('restore-banner')?.classList.remove('show');
+  }
+
+  function showRestoreBanner(count) {
+    if (count < 1) return;
+    $('restore-count').textContent = String(count);
+    $('restore-banner')?.classList.add('show');
+  }
+
+  async function applyTabState(s) {
+    if (!s?.tabsByPid) return;
+    teardownBrowsing();
+    tabsByPid = {};
+    activeTid = {};
     let maxCtr = tabCtr;
     for (const [pid, list] of Object.entries(s.tabsByPid)) {
       if (!Array.isArray(list) || !list.length) continue;
@@ -2197,6 +2231,66 @@ const B = (() => {
       sanitizeTabsForProfile(p.id);
     }
     if (s.activePid && profiles.find(p => p.id === s.activePid)) activePid = s.activePid;
+  }
+
+  async function initSessionOnStartup() {
+    const s = await eAPI.sessionLoad();
+    tabsByPid = {};
+    activeTid = {};
+    tabCtr = 0;
+    pendingRestoreSession = null;
+
+    if (Array.isArray(s?.profiles) && s.profiles.length) {
+      profiles = s.profiles.map(p => ({ ...p }));
+      for (const p of profiles) {
+        if (!p.partition) await ensurePartition(p);
+      }
+      if (s.activePid && profiles.find(p => p.id === s.activePid)) activePid = s.activePid;
+    } else {
+      profiles = [{ id: 'default', name: 'Main', color: '#8b5cf6', isIncognito: false, ephemeral: false, partition: null }];
+      activePid = 'default';
+      await ensurePartition(profiles[0]);
+    }
+
+    const restorable = sessionHasRestorablePages(s);
+    if (restorable && settings.restoreSession === true) {
+      await applyTabState(s);
+      hideRestoreBanner();
+      return;
+    }
+
+    for (const p of profiles) {
+      tabsByPid[p.id] = [];
+      activeTid[p.id] = null;
+      ensureSessionTabs(p.id);
+    }
+
+    if (restorable) {
+      pendingRestoreSession = s;
+      showRestoreBanner(countRestorableTabs(s));
+    }
+  }
+
+  async function restorePreviousPages() {
+    if (!pendingRestoreSession) return;
+    const snap = pendingRestoreSession;
+    pendingRestoreSession = null;
+    hideRestoreBanner();
+    await applyTabState(snap);
+    for (const p of profiles) {
+      if (!p.partition) await ensurePartition(p);
+    }
+    await renderAll();
+    toast(`↩ Restored ${countRestorableTabs(snap)} page(s)`);
+  }
+
+  function dismissRestore() {
+    pendingRestoreSession = null;
+    hideRestoreBanner();
+  }
+
+  async function restoreSessionState() {
+    await initSessionOnStartup();
   }
 
   let notesLoaded = false;
@@ -2562,8 +2656,8 @@ const B = (() => {
           <button class="tgl${settings.compactTabs?' on':''}" onclick="B.toggleSetting('compactTabs',this)"></button>
         </div>
         <div class="s-row">
-          <div class="s-lbl">Restore tabs on startup<div class="s-sub">Reopen your last session when you launch</div></div>
-          <button class="tgl${settings.restoreSession!==false?' on':''}" onclick="B.toggleSetting('restoreSession',this)"></button>
+          <div class="s-lbl">Restore tabs automatically<div class="s-sub">Reopen last pages on launch without asking</div></div>
+          <button class="tgl${settings.restoreSession===true?' on':''}" onclick="B.toggleSetting('restoreSession',this)"></button>
         </div>
       </div>
       <div class="s-sec">
@@ -2741,7 +2835,7 @@ const B = (() => {
   }
 
   async function loadUserData() {
-    const defaults = { homepage:'https://google.com', searchEngine:'google', theme:'dark', showClock:true, compactTabs:false, blockTrackers:true, httpsOnly:false, doNotTrack:true, blockPopups:true, restoreSession:true };
+    const defaults = { homepage:'https://google.com', searchEngine:'google', theme:'dark', showClock:true, compactTabs:false, blockTrackers:true, httpsOnly:false, doNotTrack:true, blockPopups:true, restoreSession:false };
     [bookmarks, history, settings] = await Promise.all([
       eAPI.bmLoad().catch(() => []),
       eAPI.historyLoad().catch(() => []),
@@ -2755,11 +2849,7 @@ const B = (() => {
     activePid = 'default';
     activeTid = { default: null };
     tabCtr = 0;
-    await restoreSessionState();
-    for (const p of profiles) {
-      if (!p.partition) await ensurePartition(p);
-    }
-    if (!tabsByPid.default?.length) ensureSessionTabs('default');
+    await initSessionOnStartup();
     applyTheme(settings.theme || 'dark');
     applyCompactTabs();
     mainUserPartition = await eAPI.userMainPartition();
@@ -3201,7 +3291,7 @@ const B = (() => {
   async function continueInit() {
     mainUserPartition = await eAPI.userMainPartition();
     renderUserStrip();
-    const defaults = {homepage:'https://google.com',searchEngine:'google',theme:'dark',showClock:true,compactTabs:false,blockTrackers:true,httpsOnly:false,doNotTrack:true,blockPopups:true,restoreSession:true};
+    const defaults = {homepage:'https://google.com',searchEngine:'google',theme:'dark',showClock:true,compactTabs:false,blockTrackers:true,httpsOnly:false,doNotTrack:true,blockPopups:true,restoreSession:false};
     try {
       [bookmarks, history, settings, chromiumVer, electronVer, blockedCount] = await Promise.all([
         eAPI.bmLoad().catch(() => []),
@@ -3229,7 +3319,7 @@ const B = (() => {
       bootDate.textContent = n.toLocaleDateString(undefined, {weekday:'long', month:'long', day:'numeric'});
       $('boot-clock').textContent = n.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
     }
-    await restoreSessionState();
+    await initSessionOnStartup();
     for (const p of profiles) sanitizeTabsForProfile(p.id);
     for (const p of profiles) {
       if (!p.partition) await ensurePartition(p);
@@ -3253,6 +3343,7 @@ const B = (() => {
     switchUser, removeUser, openUserModal, closeUserModal, createUser, _scUser,
     showOnboarding, showOnboardingMain, showOnboardingSignIn, finishOnboardingGuest, finishOnboardingAccount, _scOb,
     checkForUpdate, downloadUpdate, dismissUpdate,
+    restorePreviousPages, dismissRestore,
     navigate:(url)=>navigate(url),
     goBack, goFwd, reload, hardReload, goHome, focusUrl, viewSource,
     copyPageUrl, copyPageTitle, toggleFullscreen, toggleDesktopSite, screenshotPage, muteAllTabs,
