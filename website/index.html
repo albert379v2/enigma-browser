@@ -1012,7 +1012,8 @@
           if (p.primary) list.appendChild(dlLink(p.primary.label, p.primary.url));
           if (p.alternate) list.appendChild(dlLink(p.alternate.label, p.alternate.url));
           (p.variants || []).forEach(function (v) {
-            list.appendChild(dlLink(v.label, v.url));
+            const fmt = v.format ? ' (.' + v.format + ')' : '';
+            list.appendChild(dlLink(v.label + fmt, v.url));
           });
         }
         card.appendChild(list);

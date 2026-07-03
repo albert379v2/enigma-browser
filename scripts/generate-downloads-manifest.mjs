@@ -14,6 +14,47 @@ const REPO = 'Abenezer-Mengistu/enigma-browser';
 const LATEST = `https://github.com/${REPO}/releases/latest/download`;
 const RELEASE = `https://github.com/${REPO}/releases/tag/v${v}`;
 
+async function fetchReleaseAssets(version) {
+  try {
+    const res = await fetch(`https://api.github.com/repos/${REPO}/releases/tags/v${version}`, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Enigma-Manifest' },
+    });
+    if (!res.ok) return null;
+    const release = await res.json();
+    return release.assets || [];
+  } catch {
+    return null;
+  }
+}
+
+function pickMacAsset(assets, arch) {
+  if (!assets?.length) return null;
+  const re = new RegExp(`Enigma-[\\d.]+-mac-${arch}\\.(zip|dmg)$`, 'i');
+  const matches = assets.filter(a => re.test(a.name));
+  const hit = matches.find(a => /\.zip$/i.test(a.name))
+    || matches.find(a => /\.dmg$/i.test(a.name));
+  if (!hit) return null;
+  return {
+    url: hit.browser_download_url,
+    filename: hit.name,
+    format: hit.name.endsWith('.zip') ? 'zip' : 'dmg',
+  };
+}
+
+async function macVariant(version, arch, label, assets) {
+  const picked = pickMacAsset(assets, arch);
+  const ext = picked?.format || 'zip';
+  const filename = picked?.filename || `Enigma-${version}-mac-${arch}.${ext}`;
+  const url = picked?.url || `${LATEST}/${filename}`;
+  return {
+    label,
+    arch,
+    url,
+    filename,
+    format: ext,
+  };
+}
+
 async function fetchDownloadCount() {
   try {
     const res = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=100`);
@@ -34,6 +75,10 @@ async function fetchDownloadCount() {
 }
 
 const downloadCount = await fetchDownloadCount();
+const releaseAssets = await fetchReleaseAssets(v);
+const macArm = await macVariant(v, 'arm64', 'Apple Silicon (M1/M2/M3/M4)', releaseAssets);
+const macX64 = await macVariant(v, 'x64', 'Intel Mac', releaseAssets);
+const macUsesZip = macArm.format === 'zip' || macX64.format === 'zip';
 
 const manifest = {
   name: 'Enigma',
@@ -76,26 +121,20 @@ const manifest = {
       icon: '🍎',
       status: 'available',
       minVersion: 'macOS 11 Big Sur or later',
-      variants: [
-        {
-          label: 'Apple Silicon (M1/M2/M3/M4)',
-          arch: 'arm64',
-          url: `${LATEST}/Enigma-${v}-mac-arm64.dmg`,
-          filename: `Enigma-${v}-mac-arm64.dmg`,
-        },
-        {
-          label: 'Intel Mac',
-          arch: 'x64',
-          url: `${LATEST}/Enigma-${v}-mac-x64.dmg`,
-          filename: `Enigma-${v}-mac-x64.dmg`,
-        },
-      ],
-      install: [
-        'Download the .dmg for your Mac (Apple Silicon or Intel).',
-        'Open the disk image and drag Enigma into Applications.',
-        'First launch: right-click Enigma → Open if macOS blocks unknown apps.',
-        'Optional: xattr -cr /Applications/Enigma.app in Terminal',
-      ],
+      variants: [macArm, macX64],
+      install: macUsesZip
+        ? [
+            'Download the .zip for your Mac (Apple Silicon or Intel).',
+            'Double-click the zip to extract, then drag Enigma.app into Applications.',
+            'First launch: right-click Enigma → Open if macOS blocks unknown apps.',
+            'If blocked: run xattr -cr /Applications/Enigma.app in Terminal, then open again.',
+          ]
+        : [
+            'Download the .dmg for your Mac (Apple Silicon or Intel).',
+            'Open the disk image and drag Enigma into Applications.',
+            'First launch: right-click Enigma → Open if macOS blocks unknown apps.',
+            'Optional: xattr -cr /Applications/Enigma.app in Terminal',
+          ],
     },
     linux: {
       id: 'linux',
