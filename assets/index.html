@@ -515,6 +515,8 @@ html.compact-tabs .navbar{gap:4px;padding:3px 8px 4px}
 .dli-sz{font-size:10px;color:var(--t3)}
 .dli-btn{background:none;border:none;cursor:pointer;color:var(--t3);font-size:13px;z-index:1;padding:2px 4px;border-radius:3px;line-height:1}
 .dli-btn:hover{background:rgba(255,255,255,.1);color:var(--t1)}
+.dli-acts{display:flex;gap:2px;flex-shrink:0;z-index:1;align-items:center}
+.dli-acts .dli-btn{font-size:12px;padding:2px 5px}
 .dlbar-x{background:none;border:none;cursor:pointer;color:var(--t3);margin-left:auto;font-size:16px;flex-shrink:0;padding:2px 6px}
 .dlbar-x:hover{color:var(--t1)}
 
@@ -2855,38 +2857,87 @@ const B = (() => {
   function findKey(e) { if(e.key==='Escape')closeFind(); else if(e.key==='Enter') e.shiftKey?findPrev():findNext(); }
 
   // ── DOWNLOADS ────────────────────────────────────────────────────────────
+  function dlIsActive(dl) {
+    return dl.state === 'progressing' && !dl.paused;
+  }
+  function dlIsPaused(dl) {
+    return dl.state === 'progressing' && dl.paused;
+  }
+  function dlStatusLabel(dl) {
+    if (dl.state === 'completed') return 'Completed';
+    if (dl.state === 'cancelled') return 'Cancelled';
+    if (dl.state === 'interrupted') return 'Failed';
+    if (dl.paused) return 'Paused';
+    const pct = dl.total ? Math.round(dl.received / dl.total * 100) : 0;
+    return `${pct}% · ${(dl.received / 1048576).toFixed(1)} MB`;
+  }
+  function dlActionsHtml(dl, compact) {
+    const cls = compact ? 'dli-btn' : 'pa';
+    const stop = 'event.stopPropagation()';
+    let acts = '';
+    if (dlIsActive(dl)) {
+      acts += `<button class="${cls}" onclick="${stop};B.pauseDownload(${dl.id})" title="Pause">⏸</button>`;
+      acts += `<button class="${cls}" onclick="${stop};B.cancelDownload(${dl.id})" title="Cancel">✕</button>`;
+    } else if (dlIsPaused(dl)) {
+      acts += `<button class="${cls}" onclick="${stop};B.resumeDownload(${dl.id})" title="Resume">▶</button>`;
+      acts += `<button class="${cls}" onclick="${stop};B.cancelDownload(${dl.id})" title="Cancel">✕</button>`;
+    } else {
+      if (dl.state === 'completed') {
+        acts += `<button class="${cls}" onclick="${stop};B.openDownload(${dl.id})" title="Open file">📂</button>`;
+      }
+      acts += `<button class="${cls}" onclick="${stop};B.removeDownload(${dl.id})" title="Remove">✕</button>`;
+    }
+    return compact ? `<div class="dli-acts">${acts}</div>` : `<div class="pi-acts">${acts}</div>`;
+  }
   function renderDlBar() {
     if(!downloads.length){$('dlbar').classList.remove('open');return;}
     $('dlbar').classList.add('open');
     $('dl-items').innerHTML=downloads.slice(0,5).map(dl=>{
       const pct=dl.total?dl.received/dl.total:0;
-      const done=dl.state==='completed', fail=dl.state==='interrupted';
+      const done=dl.state==='completed', fail=dl.state==='interrupted'||dl.state==='cancelled';
+      const icon=done?'✅':fail?'❌':dl.paused?'⏸️':'⬇️';
       return `<div class="dli">
         <div class="dli-prog" style="width:${pct*100}%"></div>
-        <div class="dli-ic">${done?'✅':fail?'❌':'⬇️'}</div>
+        <div class="dli-ic">${icon}</div>
         <div class="dli-info">
           <div class="dli-name" title="${esc(dl.filename)}">${esc(dl.filename)}</div>
-          <div class="dli-sz">${done?'Done':fail?'Failed':Math.round(pct*100)+'% · '+(dl.received/1048576).toFixed(1)+' MB'}</div>
+          <div class="dli-sz">${done?'Done':fail?(dl.state==='cancelled'?'Cancelled':'Failed'):dlStatusLabel(dl)}</div>
         </div>
-        ${done?`<button class="dli-btn" onclick="B.openDownload(${dl.id})" title="Open file">📂</button>`:''}
+        ${dlActionsHtml(dl, true)}
       </div>`;
     }).join('');
   }
   function renderDlPanel() {
     $('dl-panel-body').innerHTML=downloads.length?downloads.map(dl=>`
       <div class="pi">
-        <div class="pi-ic">${dl.state==='completed'?'✅':dl.state==='interrupted'?'❌':'⬇️'}</div>
+        <div class="pi-ic">${dl.state==='completed'?'✅':dl.state==='interrupted'||dl.state==='cancelled'?'❌':dl.paused?'⏸️':'⬇️'}</div>
         <div class="pi-t">
           <div class="pi-ttl">${esc(dl.filename)}</div>
-          <div class="pi-sub">${dl.state==='completed'?'Completed':dl.state==='interrupted'?'Failed':Math.round(dl.total?dl.received/dl.total*100:0)+'%'}</div>
+          <div class="pi-sub">${dlStatusLabel(dl)}</div>
         </div>
-        ${dl.state==='completed'?`<button class="pa" onclick="B.openDownload(${dl.id})">📂</button>`:''}
+        ${dlActionsHtml(dl, false)}
       </div>`).join(''):`<div class="pempty">No downloads yet</div>`;
   }
   function closeDlBar() { $('dlbar').classList.remove('open'); }
   function openDownload(id) {
     const dl = downloads.find(x => x.id === id);
     if (dl?.path) eAPI.openFile(dl.path);
+  }
+  async function pauseDownload(id) {
+    await eAPI.dlPause(id);
+  }
+  async function resumeDownload(id) {
+    await eAPI.dlResume(id);
+  }
+  async function cancelDownload(id) {
+    await eAPI.dlCancel(id);
+  }
+  function removeDownload(id) {
+    eAPI.dlRemove(id);
+    const idx = downloads.findIndex(x => x.id === id);
+    if (idx >= 0) downloads.splice(idx, 1);
+    renderDlBar();
+    renderDlPanel();
   }
 
   // ── PRINT / DEVTOOLS ─────────────────────────────────────────────────────
@@ -4165,7 +4216,7 @@ const B = (() => {
     toggleBookmark, renderBM,
     loadHistory, renderHist, clearHistory,
     openFind, closeFind, doFind, findNext, findPrev, findKey,
-    closeDlBar, renderDlBar, renderDlPanel, openDownload,
+    closeDlBar, renderDlBar, renderDlPanel, openDownload, pauseDownload, resumeDownload, cancelDownload, removeDownload,
     openDevTools, printPage,
     toggleReading, closeReading,
     togglePanel, closePanel,

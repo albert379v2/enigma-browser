@@ -291,6 +291,7 @@ const write = (p, d)  => { try { fs.writeFileSync(p, JSON.stringify(d, null, 2))
 let mainWin = null;
 let splashWin = null;
 const downloads = [];
+const downloadItems = new Map();
 const hookedSessions = new WeakSet();
 let appSettings = { ...DEFAULT_SETTINGS };
 let blockedTrackerCount = 0;
@@ -346,17 +347,24 @@ function hookDownloads(ses) {
       state: 'progressing',
       received: 0,
       total: item.getTotalBytes(),
+      paused: false,
     };
+    downloadItems.set(dl.id, item);
     downloads.unshift(dl);
     mainWin?.webContents.send('dl-start', dl);
     item.on('updated', (_, st) => {
       dl.state = st;
       dl.received = item.getReceivedBytes();
       dl.total = item.getTotalBytes();
-      mainWin?.webContents.send('dl-update', { id: dl.id, state: st, received: dl.received, total: dl.total });
+      dl.paused = item.isPaused();
+      mainWin?.webContents.send('dl-update', {
+        id: dl.id, state: st, received: dl.received, total: dl.total, paused: dl.paused,
+      });
     });
     item.once('done', (_, st) => {
       dl.state = st;
+      dl.paused = false;
+      downloadItems.delete(dl.id);
       mainWin?.webContents.send('dl-done', { id: dl.id, state: st, path: savePath });
     });
   });
@@ -838,6 +846,30 @@ ipcMain.handle('settings-save', (_, d) => {
 });
 ipcMain.handle('os-prefers-dark', () => readOsPrefersDark());
 ipcMain.handle('dl-list', () => downloads);
+ipcMain.handle('dl-pause', (_, id) => {
+  const item = downloadItems.get(id);
+  if (!item || item.isPaused()) return false;
+  item.pause();
+  return true;
+});
+ipcMain.handle('dl-resume', (_, id) => {
+  const item = downloadItems.get(id);
+  if (!item || !item.canResume()) return false;
+  item.resume();
+  return true;
+});
+ipcMain.handle('dl-cancel', (_, id) => {
+  const item = downloadItems.get(id);
+  if (!item) return false;
+  item.cancel();
+  return true;
+});
+ipcMain.handle('dl-remove', (_, id) => {
+  const idx = downloads.findIndex(d => d.id === id);
+  if (idx >= 0) downloads.splice(idx, 1);
+  downloadItems.delete(id);
+  return true;
+});
 ipcMain.handle('session-save', (_, d) => { write(userPaths().session, d); return true; });
 ipcMain.handle('session-load', () => read(userPaths().session, null));
 ipcMain.handle('notes-load', () => {
