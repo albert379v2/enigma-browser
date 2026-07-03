@@ -73,17 +73,15 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build macOS
-        run: npm run build:mac
+      - name: Build macOS (zip only — DMG volumes conflict on CI when building both arches)
+        run: npx electron-builder --mac zip --x64 --arm64 --publish never
 
       - name: Upload macOS artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Enigma-macOS
-          path: |
-            dist/*.dmg
-            dist/*.zip
+          path: dist/*.zip
           retention-days: 30
 
   release:
