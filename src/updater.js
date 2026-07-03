@@ -108,7 +108,7 @@ function buildUpdateResult(base, extra = {}) {
 }
 
 function assetDownloadUrl(asset) {
-  return asset?.url || asset?.browser_download_url || '';
+  return asset?.browser_download_url || asset?.url || '';
 }
 
 async function downloadAsset(url, dest, onProgress) {
@@ -233,10 +233,10 @@ function initUpdater(getMainWindow, opts = {}) {
     send('update-downloaded', { version: info.version, mode: 'autoUpdater', ready: true });
   });
 
-  autoUpdater.on('error', (err) => {
-    downloading = false;
+  autoUpdater.on('error', () => {
     if (suppressAutoUpdaterErrors) return;
-    send('update-error', { message: err?.message || String(err) });
+    downloading = false;
+    send('update-error', { message: 'Update check failed' });
   });
 
   if (periodicTimer) clearInterval(periodicTimer);
@@ -273,41 +273,16 @@ async function checkForUpdates() {
       });
     }
 
-    if (app.isPackaged && !isPortableBuild()) {
-      try {
-        const result = await autoUpdater.checkForUpdates();
-        const info = result?.updateInfo;
-        if (info && isVersionNewer(info.version, current)) {
-          const notes = releaseNotesSnippet(
-            typeof info.releaseNotes === 'string'
-              ? info.releaseNotes
-              : Array.isArray(info.releaseNotes)
-                ? info.releaseNotes.map(n => n.note || '').join('\n')
-                : '',
-          );
-          pendingRelease = { version: info.version, via: 'autoUpdater', releaseNotes: notes };
-          return buildUpdateResult(base, {
-            available: true,
-            latestVersion: info.version,
-            downloadUrl: info.path || UPDATE_PAGE,
-            releaseNotes: notes,
-          });
-        }
-      } catch {
-        /* fall through to GitHub API */
-      }
-    }
-
     const release = await fetchLatestRelease();
     const latest = (release.tag_name || '').replace(/^v/i, '');
     const notes = releaseNotesSnippet(release.body || '');
-    pendingRelease = { release, version: latest, via: 'github', releaseNotes: notes };
     const asset = pickAsset(release, isPortableBuild());
+    pendingRelease = { release, version: latest, via: 'github', releaseNotes: notes };
     return buildUpdateResult(base, {
       available: isVersionNewer(latest, current),
       latestVersion: latest,
       url: release.html_url || UPDATE_PAGE,
-      downloadUrl: asset?.browser_download_url || UPDATE_PAGE,
+      downloadUrl: assetDownloadUrl(asset) || UPDATE_PAGE,
       assetName: asset?.name || null,
       releaseNotes: notes,
     });
@@ -345,26 +320,17 @@ async function downloadUpdate() {
   downloading = true;
   updateReady = false;
   pendingInstall = null;
+  suppressAutoUpdaterErrors = true;
   send('update-progress', { percent: 0, transferred: 0, total: 0, bytesPerSecond: 0, etaSeconds: 0 });
 
   try {
-    if (pendingRelease?.via === 'autoUpdater' && !isPortableBuild()) {
-      suppressAutoUpdaterErrors = true;
-      try {
-        await autoUpdater.downloadUpdate();
-        suppressAutoUpdaterErrors = false;
-        return { ok: true, mode: 'autoUpdater' };
-      } catch {
-        suppressAutoUpdaterErrors = false;
-        /* fall through to direct GitHub download */
-      }
-    }
-
     return await downloadViaGithub();
   } catch (e) {
     downloading = false;
     send('update-error', { message: e?.message || String(e) });
     throw e;
+  } finally {
+    suppressAutoUpdaterErrors = false;
   }
 }
 
