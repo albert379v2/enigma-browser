@@ -128,16 +128,103 @@ function emptySessionSeed(color = '#8b5cf6') {
   };
 }
 
-function seedUserFiles(userId, { color }) {
+function privacyPresetSettings(preset) {
+  if (preset === 'strict') {
+    return {
+      blockTrackers: true,
+      httpsOnly: true,
+      doNotTrack: true,
+      blockPopups: true,
+      filterLists: true,
+      fingerprintProtection: true,
+      webrtcProtection: true,
+      mixedContentBlock: true,
+    };
+  }
+  if (preset === 'relaxed') {
+    return {
+      blockTrackers: false,
+      httpsOnly: false,
+      doNotTrack: false,
+      blockPopups: true,
+      filterLists: false,
+      fingerprintProtection: false,
+      webrtcProtection: false,
+      mixedContentBlock: false,
+    };
+  }
+  return {
+    blockTrackers: true,
+    httpsOnly: false,
+    doNotTrack: true,
+    blockPopups: true,
+    filterLists: true,
+    fingerprintProtection: true,
+    webrtcProtection: true,
+    mixedContentBlock: false,
+  };
+}
+
+function privacyPresetDoc(preset) {
+  if (preset === 'strict') {
+    return {
+      ...DEFAULT_PRIVACY,
+      filterLists: true,
+      fingerprintProtection: true,
+      webrtcProtection: true,
+      mixedContentBlock: true,
+    };
+  }
+  if (preset === 'relaxed') {
+    return {
+      ...DEFAULT_PRIVACY,
+      filterLists: false,
+      fingerprintProtection: false,
+      webrtcProtection: false,
+      mixedContentBlock: false,
+    };
+  }
+  return { ...DEFAULT_PRIVACY };
+}
+
+function seedUserFiles(userId, opts = {}) {
+  const {
+    color = '#8b5cf6',
+    settings: settingsOverride = {},
+    privacyPreset = 'balanced',
+    starterSession = null,
+  } = opts;
   const paths = userPaths(userId);
   if (!migrateLegacyIntoUser(userId)) {
-    write(paths.settings, { ...DEFAULT_SETTINGS, restoreSession: false });
+    write(paths.settings, {
+      ...DEFAULT_SETTINGS,
+      restoreSession: false,
+      ...privacyPresetSettings(privacyPreset),
+      ...settingsOverride,
+    });
     write(paths.history, []);
     write(paths.bookmarks, []);
-    write(paths.session, emptySessionSeed(color));
-    try { fs.writeFileSync(paths.notes, ''); } catch {}
+    write(privacyPath(userId), privacyPresetDoc(privacyPreset));
+
+    const session = emptySessionSeed(color);
+    if (starterSession && starterSession.id && starterSession.id !== 'custom') {
+      const sid = `s_${Date.now()}`;
+      session.profiles.push({
+        id: sid,
+        name: starterSession.name || starterSession.id,
+        color: starterSession.color || color,
+        isIncognito: true,
+        ephemeral: !!starterSession.ephemeral,
+        partition: null,
+        templateId: starterSession.id,
+        privacy: starterSession.defaults || {},
+        searchEngine: starterSession.defaults?.searchEngine || settingsOverride.searchEngine || DEFAULT_SETTINGS.searchEngine,
+      });
+    }
+    write(paths.session, session);
+    try { fs.writeFileSync(paths.notes, ''); } catch { /* ignore */ }
   } else if (!fs.existsSync(paths.settings)) {
-    write(paths.settings, { ...DEFAULT_SETTINGS, restoreSession: false });
+    write(paths.settings, { ...DEFAULT_SETTINGS, restoreSession: false, ...settingsOverride });
   }
 }
 
@@ -618,13 +705,27 @@ ipcMain.handle('users-switch', (_, userId) => {
   return { activeUserId: userId, users: reg.users };
 });
 
-ipcMain.handle('users-create', (_, { name, color }) => {
+ipcMain.handle('users-create', (_, payload = {}) => {
   const reg = getRegistry();
   const id = `u_${Date.now()}`;
+  const name = (payload.name || '').trim() || 'User';
+  const color = payload.color || '#8b5cf6';
+  const avatar = (payload.avatar || '').trim().slice(0, 4) || '';
+  const theme = payload.theme || DEFAULT_SETTINGS.theme;
+  const searchEngine = payload.searchEngine || DEFAULT_SETTINGS.searchEngine;
+  const homepage = (payload.homepage || '').trim() || DEFAULT_SETTINGS.homepage;
+  const privacyPreset = ['strict', 'relaxed', 'balanced'].includes(payload.privacyPreset)
+    ? payload.privacyPreset
+    : 'balanced';
+  const starterSession = payload.starterSession && typeof payload.starterSession === 'object'
+    ? payload.starterSession
+    : null;
+
   reg.users.push({
     id,
-    name: name || 'User',
-    color: color || '#8b5cf6',
+    name,
+    color,
+    avatar,
     type: 'account',
     created: Date.now(),
   });
@@ -632,9 +733,24 @@ ipcMain.handle('users-create', (_, { name, color }) => {
   reg.onboardingComplete = true;
   saveRegistry(reg);
   userDir(id);
-  seedUserFiles(id, { name: name || 'User', color: color || '#8b5cf6', type: 'account' });
+  seedUserFiles(id, {
+    name,
+    color,
+    type: 'account',
+    privacyPreset,
+    starterSession,
+    settings: {
+      theme,
+      searchEngine,
+      homepage,
+      showClock: payload.showClock !== false,
+      compactTabs: !!payload.compactTabs,
+      restoreSession: !!payload.restoreSession,
+      checkUpdates: payload.checkUpdates !== false,
+    },
+  });
   setActiveUser(id);
-  return { id, name: name || 'User', color: color || '#8b5cf6', users: reg.users };
+  return { id, name, color, avatar, users: reg.users };
 });
 
 ipcMain.handle('users-remove', async (_, userId) => {

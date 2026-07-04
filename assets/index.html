@@ -610,17 +610,38 @@ html.compact-tabs .navbar{gap:4px;padding:4px 8px 6px}
 .ob-back{margin-top:14px;font-size:.8rem;color:var(--t3);cursor:pointer;background:none;border:none;width:100%}
 .ob-back:hover{color:var(--cyan)}
 .app.onboarding-pending{visibility:hidden}
-.modal{background:var(--glass);backdrop-filter:blur(28px);border:1px solid var(--b2);border-radius:var(--r-xl);padding:28px;width:min(400px,calc(100vw - 32px));display:flex;flex-direction:column;gap:18px;box-shadow:var(--shadow-lg)}
+.modal{background:var(--glass);backdrop-filter:blur(28px);border:1px solid var(--b2);border-radius:var(--r-xl);padding:28px;width:min(400px,calc(100vw - 32px));display:flex;flex-direction:column;gap:18px;box-shadow:var(--shadow-lg);max-height:min(88vh,720px);overflow-y:auto}
+.modal.modal-wide{width:min(460px,calc(100vw - 32px))}
 .m-header{display:flex;flex-direction:column;gap:8px}
 .m-title{font-size:17px;font-weight:700;color:var(--t1);letter-spacing:-.02em;line-height:1.3}
 .m-sub{font-size:12px;color:var(--t2);line-height:1.55;margin:0}
 .m-label{font-size:11px;color:var(--t3);margin-bottom:5px;font-weight:500;letter-spacing:.02em}
-.m-inp{height:36px;border:1px solid var(--b2);border-radius:var(--r);padding:0 12px;font-size:13px;background:var(--s1);color:var(--t1);outline:none;width:100%}
-.m-inp:focus{border-color:var(--acc);box-shadow:0 0 0 2px rgba(144,97,249,.2)}
+.m-hint{font-size:10.5px;color:var(--t4);margin-top:4px;line-height:1.4}
+.m-inp,.m-sel{height:36px;border:1px solid var(--b2);border-radius:var(--r);padding:0 12px;font-size:13px;background:var(--s1);color:var(--t1);outline:none;width:100%}
+.m-inp:focus,.m-sel:focus{border-color:var(--acc);box-shadow:0 0 0 2px rgba(144,97,249,.2)}
+.m-sel{cursor:pointer}
+.m-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.m-field{min-width:0}
+.m-chip-grid{display:flex;flex-wrap:wrap;gap:6px}
+.m-chip{
+  padding:6px 10px;border-radius:999px;border:1px solid var(--b1);background:rgba(255,255,255,.03);
+  color:var(--t3);font-size:11px;font-weight:600;cursor:pointer;transition:all .12s;line-height:1.2;
+}
+.m-chip:hover{color:var(--t1);border-color:var(--b2);background:rgba(255,255,255,.06)}
+.m-chip.sel{color:var(--t1);border-color:var(--b2);background:linear-gradient(135deg,rgba(124,58,237,.22),rgba(99,102,241,.12))}
+.m-avatar-grid{display:flex;flex-wrap:wrap;gap:6px}
+.m-avatar{
+  width:34px;height:34px;border-radius:10px;border:1px solid var(--b1);background:rgba(255,255,255,.03);
+  display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;transition:all .12s;
+}
+.m-avatar:hover{border-color:var(--b2);transform:scale(1.06)}
+.m-avatar.sel{border-color:var(--acc);box-shadow:0 0 0 2px rgba(144,97,249,.2);background:rgba(144,97,249,.12)}
 .swatches{display:flex;gap:8px;flex-wrap:wrap}
 .sw{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2.5px solid transparent;transition:transform .12s,border-color .12s}
 .sw:hover{transform:scale(1.15)}
 .sw.sel{border-color:#fff;transform:scale(1.1)}
+.up-av{font-size:13px;line-height:1;flex-shrink:0}
+@media (max-width:480px){.m-grid{grid-template-columns:1fr}}
 .tgl-row{display:flex;align-items:center;justify-content:space-between;background:var(--s1);border-radius:var(--r);padding:10px 14px;gap:16px}
 .tgl-row .m-label{margin:0}
 .tgl{width:38px;height:21px;border-radius:11px;background:var(--s5);cursor:pointer;position:relative;transition:background .2s;border:none;flex-shrink:0}
@@ -1222,19 +1243,62 @@ button:focus:not(:focus-visible),input:focus:not(:focus-visible){outline:none}
 
 <!-- ADD USER MODAL -->
 <div class="overlay" id="user-modal" style="display:none" onclick="if(event.target===this)B.closeUserModal()">
-  <div class="modal">
+  <div class="modal modal-wide">
     <div class="m-header">
       <div class="m-title">New User</div>
-      <div class="m-sub">Each user gets their own bookmarks, history, settings, and sessions — fully separate.</div>
+      <div class="m-sub">Customize this profile — bookmarks, history, settings, and sessions stay fully separate.</div>
     </div>
-    <div>
+    <div class="m-field">
       <div class="m-label">User name</div>
       <input class="m-inp" id="u-name" placeholder="e.g. Alex, Jordan, Guest…" maxlength="24"
         onkeydown="if(event.key==='Enter')B.createUser()"/>
     </div>
-    <div>
+    <div class="m-field">
+      <div class="m-label">Avatar</div>
+      <div class="m-avatar-grid" id="u-avatars"></div>
+    </div>
+    <div class="m-field">
       <div class="m-label">Accent color</div>
       <div class="swatches" id="u-swatches"></div>
+    </div>
+    <div class="m-grid">
+      <div class="m-field">
+        <div class="m-label">Theme</div>
+        <select class="m-sel" id="u-theme"></select>
+      </div>
+      <div class="m-field">
+        <div class="m-label">Search engine</div>
+        <select class="m-sel" id="u-engine"></select>
+      </div>
+    </div>
+    <div class="m-field">
+      <div class="m-label">Homepage</div>
+      <input class="m-inp" id="u-home" placeholder="https://google.com" maxlength="200"/>
+    </div>
+    <div class="m-field">
+      <div class="m-label">Privacy preset</div>
+      <div class="m-chip-grid" id="u-privacy"></div>
+      <div class="m-hint" id="u-privacy-hint"></div>
+    </div>
+    <div class="m-field">
+      <div class="m-label">Starter session</div>
+      <select class="m-sel" id="u-starter"></select>
+      <div class="m-hint">Optional isolated container created alongside Main.</div>
+    </div>
+    <div class="m-field">
+      <div class="m-label">Preferences</div>
+      <div class="tgl-row" style="margin-bottom:6px">
+        <div class="m-label">Show clock on new tab</div>
+        <button type="button" class="tgl on" id="u-clock" onclick="this.classList.toggle('on')"></button>
+      </div>
+      <div class="tgl-row" style="margin-bottom:6px">
+        <div class="m-label">Compact tabs</div>
+        <button type="button" class="tgl" id="u-compact" onclick="this.classList.toggle('on')"></button>
+      </div>
+      <div class="tgl-row">
+        <div class="m-label">Restore tabs automatically</div>
+        <button type="button" class="tgl" id="u-restore" onclick="this.classList.toggle('on')"></button>
+      </div>
     </div>
     <div class="m-row">
       <button class="btn btn-g" onclick="B.closeUserModal()">Cancel</button>
@@ -1399,6 +1463,12 @@ const THEME_LIST = [
 ];
 const THEME_CYCLE = THEME_LIST.map(t => t[0]);
 const COLORS = ['#8b5cf6','#3b82f6','#10b981','#f59e0b','#ef4444','#ec4899','#06b6d4','#84cc16','#6366f1','#f97316'];
+const USER_AVATARS = ['👤','🧑','👩','👨','🧒','🦊','🐱','🐼','🌟','🚀','💼','🎮','📚','🎧','☕','🌿'];
+const PRIVACY_PRESETS = [
+  { id: 'balanced', label: 'Balanced', hint: 'Trackers blocked, fingerprint & WebRTC protection on.' },
+  { id: 'strict', label: 'Strict', hint: 'Maximum privacy — HTTPS-only and mixed content blocked.' },
+  { id: 'relaxed', label: 'Relaxed', hint: 'Fewer blocks — better for sites that break with protection.' },
+];
 const ENGINES = {
   google:     q=>`https://www.google.com/search?q=${encodeURIComponent(q)}`,
   bing:       q=>`https://www.bing.com/search?q=${encodeURIComponent(q)}`,
@@ -1449,6 +1519,8 @@ const B = (() => {
   let zoom      = 1.0;
   let ephem     = false;
   let selColor  = COLORS[0];
+  let selUserAvatar = '👤';
+  let selUserPrivacy = 'balanced';
   let openPanel = null;
   let downloads = [];
   let sgIdx     = -1;
@@ -3150,7 +3222,9 @@ const B = (() => {
         ${users.map(u=>`
           <div class="s-row">
             <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
-              <div style="width:9px;height:9px;border-radius:50%;background:${u.color};flex-shrink:0"></div>
+              ${u.avatar
+                ? `<span style="font-size:14px;line-height:1">${esc(u.avatar)}</span>`
+                : `<div style="width:9px;height:9px;border-radius:50%;background:${u.color};flex-shrink:0"></div>`}
               <div class="s-lbl">${esc(u.name)}${u.id===activeUserId?' · active':''}</div>
             </div>
             ${users.length>1?`<button class="btn btn-r" style="padding:4px 10px;font-size:11px" onclick="B.removeUser('${u.id}')">Remove</button>`:''}
@@ -3375,8 +3449,10 @@ const B = (() => {
   // ── USERS ────────────────────────────────────────────────────────────────
   function renderUserStrip() {
     $('ustrip').innerHTML = users.map(u => `
-      <div class="up${u.id === activeUserId ? ' act' : ''}" onclick="B.switchUser('${u.id}')">
-        <div class="up-dot" style="background:${u.color}"></div>
+      <div class="up${u.id === activeUserId ? ' act' : ''}" onclick="B.switchUser('${u.id}')" title="${esc(u.name)}">
+        ${u.avatar
+          ? `<span class="up-av">${esc(u.avatar)}</span>`
+          : `<div class="up-dot" style="background:${u.color}"></div>`}
         ${esc(u.name)}
         ${users.length > 1 ? `<span class="up-x" onclick="event.stopPropagation();B.removeUser('${u.id}')">✕</span>` : ''}
       </div>`).join('') +
@@ -3459,8 +3535,19 @@ const B = (() => {
   function openUserModal() {
     closeMenu();
     selColor = COLORS[Math.floor(Math.random() * COLORS.length)];
+    selUserAvatar = USER_AVATARS[Math.floor(Math.random() * USER_AVATARS.length)];
+    selUserPrivacy = 'balanced';
     $('u-name').value = '';
+    $('u-home').value = settings.homepage || 'https://google.com';
+    $('u-clock').classList.toggle('on', settings.showClock !== false);
+    $('u-compact').classList.toggle('on', !!settings.compactTabs);
+    $('u-restore').classList.toggle('on', !!settings.restoreSession);
+    renderUserThemeOptions();
+    renderUserEngineOptions();
+    renderUserStarterOptions();
+    renderUserAvatars();
     renderUserSwatches();
+    renderUserPrivacyChips();
     $('user-modal').style.display = 'flex';
     setTimeout(() => $('u-name').focus(), 60);
   }
@@ -3469,19 +3556,87 @@ const B = (() => {
     $('u-swatches').innerHTML = COLORS.map(c => `<div class="sw${c === selColor ? ' sel' : ''}" style="background:${c}" onclick="B._scUser('${c}')"></div>`).join('');
   }
   function _scUser(c) { selColor = c; renderUserSwatches(); }
+  function renderUserAvatars() {
+    $('u-avatars').innerHTML = USER_AVATARS.map(a =>
+      `<button type="button" class="m-avatar${a === selUserAvatar ? ' sel' : ''}" onclick="B._scUserAvatar('${a}')">${a}</button>`
+    ).join('');
+  }
+  function _scUserAvatar(a) { selUserAvatar = a; renderUserAvatars(); }
+  function renderUserPrivacyChips() {
+    $('u-privacy').innerHTML = PRIVACY_PRESETS.map(p =>
+      `<button type="button" class="m-chip${p.id === selUserPrivacy ? ' sel' : ''}" onclick="B._scUserPrivacy('${p.id}')">${esc(p.label)}</button>`
+    ).join('');
+    const hint = PRIVACY_PRESETS.find(p => p.id === selUserPrivacy);
+    $('u-privacy-hint').textContent = hint?.hint || '';
+  }
+  function _scUserPrivacy(id) { selUserPrivacy = id; renderUserPrivacyChips(); }
+  function renderUserThemeOptions() {
+    const el = $('u-theme');
+    if (!el) return;
+    const current = settings.theme || 'dark';
+    el.innerHTML = THEME_LIST.map(([id, label]) =>
+      `<option value="${id}"${id === current ? ' selected' : ''}>${esc(label)}</option>`
+    ).join('');
+  }
+  function renderUserEngineOptions() {
+    const el = $('u-engine');
+    if (!el) return;
+    const current = settings.searchEngine || 'google';
+    el.innerHTML = Object.keys(ENGINES).map(e =>
+      `<option value="${e}"${e === current ? ' selected' : ''}>${e[0].toUpperCase() + e.slice(1)}</option>`
+    ).join('');
+  }
+  function renderUserStarterOptions() {
+    const el = $('u-starter');
+    if (!el) return;
+    const opts = [{ id: '', name: 'Main only' }].concat(
+      (sessionTemplates || []).filter(t => t.id && t.id !== 'custom')
+    );
+    el.innerHTML = opts.map(t =>
+      `<option value="${esc(t.id)}">${esc(t.name)}${t.description ? ' — ' + esc(t.description).slice(0, 42) : ''}</option>`
+    ).join('');
+  }
 
   async function createUser() {
     const name = $('u-name').value.trim() || 'User';
+    const theme = $('u-theme')?.value || 'dark';
+    const searchEngine = $('u-engine')?.value || 'google';
+    let homepage = ($('u-home')?.value || '').trim() || 'https://google.com';
+    if (!/^https?:\/\//i.test(homepage)) homepage = 'https://' + homepage;
+    const starterId = $('u-starter')?.value || '';
+    const starterTpl = starterId
+      ? (sessionTemplates || []).find(t => t.id === starterId)
+      : null;
+    const starterSession = starterTpl ? {
+      id: starterTpl.id,
+      name: starterTpl.name,
+      color: starterTpl.color || selColor,
+      defaults: starterTpl.defaults || {},
+      ephemeral: false,
+    } : null;
+
     await persistCurrentUser();
     teardownBrowsing();
-    const res = await eAPI.usersCreate({ name, color: selColor });
+    const res = await eAPI.usersCreate({
+      name,
+      color: selColor,
+      avatar: selUserAvatar,
+      theme,
+      searchEngine,
+      homepage,
+      privacyPreset: selUserPrivacy,
+      starterSession,
+      showClock: $('u-clock')?.classList.contains('on'),
+      compactTabs: $('u-compact')?.classList.contains('on'),
+      restoreSession: $('u-restore')?.classList.contains('on'),
+    });
     activeUserId = res.id;
     users = res.users;
     await loadUserData();
     closeUserModal();
     renderUserStrip();
     await renderAll();
-    toast(`👤 ${name} — use + Session to add an isolated session`);
+    toast(`👤 ${name} ready${starterSession ? ` · ${starterSession.name} session added` : ''}`);
   }
 
   async function removeUser(userId) {
@@ -4238,7 +4393,7 @@ const B = (() => {
     switchProfile, removeProfile, openProfileModal, closeModal, createProfile, _sc, toggleEphem, selectTemplate,
     openSessionDashboard, closeSessionDashboard, burnSession,
     addSiteException, removeSiteException, exportVault, importVault,
-    switchUser, removeUser, openUserModal, closeUserModal, createUser, _scUser,
+    switchUser, removeUser, openUserModal, closeUserModal, createUser, _scUser, _scUserAvatar, _scUserPrivacy,
     showOnboarding, showOnboardingMain, showOnboardingSignIn, obNext, obBack,
     finishOnboardingGuest, finishOnboardingAccount, _scOb,
     checkForUpdate, checkForUpdateFromSettings, downloadUpdate, dismissUpdate,
