@@ -1,0 +1,41 @@
+#!/bin/sh
+# Only Abenezer-Mengistu may author commits on this repository.
+REQUIRED_NAME="Abenezer-Mengistu"
+REQUIRED_EMAIL="abenezermengistu60@gmail.com"
+BLOCKED_EMAILS="husibest000@gmail.com"
+
+NAME=$(git config user.name)
+EMAIL=$(git config user.email)
+# Prefer env overrides used by tooling
+if [ -n "$GIT_AUTHOR_NAME" ]; then NAME="$GIT_AUTHOR_NAME"; fi
+if [ -n "$GIT_AUTHOR_EMAIL" ]; then EMAIL="$GIT_AUTHOR_EMAIL"; fi
+
+EMAIL_LC=$(printf '%s' "$EMAIL" | tr 'A-Z' 'a-z')
+REQUIRED_LC=$(printf '%s' "$REQUIRED_EMAIL" | tr 'A-Z' 'a-z')
+
+for blocked in $BLOCKED_EMAILS; do
+  blocked_lc=$(printf '%s' "$blocked" | tr 'A-Z' 'a-z')
+  if [ "$EMAIL_LC" = "$blocked_lc" ]; then
+    echo ""
+    echo "BLOCKED: commit author email is $EMAIL (huss-huss account)."
+    echo "Only $REQUIRED_NAME <$REQUIRED_EMAIL> may commit to this repo."
+    echo "Fix with:"
+    echo "  git config user.name \"$REQUIRED_NAME\""
+    echo "  git config user.email \"$REQUIRED_EMAIL\""
+    echo ""
+    exit 1
+  fi
+done
+
+if [ "$NAME" != "$REQUIRED_NAME" ] || [ "$EMAIL_LC" != "$REQUIRED_LC" ]; then
+  echo ""
+  echo "BLOCKED: commit author must be $REQUIRED_NAME <$REQUIRED_EMAIL>"
+  echo "Current identity: $NAME <$EMAIL>"
+  echo "Fix with:"
+  echo "  git config user.name \"$REQUIRED_NAME\""
+  echo "  git config user.email \"$REQUIRED_EMAIL\""
+  echo ""
+  exit 1
+fi
+
+exit 0
