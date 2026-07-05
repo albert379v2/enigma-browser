@@ -1639,7 +1639,8 @@ const B = (() => {
   let sgIdx     = -1;
   let progT, closeTabHistory = [], saveSessionT, saveNotesT;
   let pinned = new Set(), muted = new Set(), siteViewModes = {};
-  let suggestTimer = null, suggestReq = 0;
+  let suggestTimer = null, suggestReq = 0, lastRemoteSuggest = '';
+  let loadDepth = {}, loadTimeouts = {}, updateNavT = null;
   let navHist = {}; // tabId -> { list: string[], idx: number, internal: boolean }
   let blockedCount = 0;
   let isReading = false;
@@ -2135,6 +2136,71 @@ const B = (() => {
     if(v>=1) progT=setTimeout(()=>{b.style.opacity='0';b.style.width='0';},500);
   }
 
+  function setUrlBar(url) {
+    const inp = $('url-inp');
+    if (document.activeElement === inp) return;
+    inp.value = url;
+  }
+
+  function scheduleUpdateNav() {
+    clearTimeout(updateNavT);
+    updateNavT = setTimeout(updateNav, 80);
+  }
+
+  function beginTabLoad(pid, tabId) {
+    const key = metaKey(pid, tabId);
+    loadDepth[key] = (loadDepth[key] || 0) + 1;
+    if (loadDepth[key] > 1) return;
+    const t = tabRef(tabId, pid);
+    if (!t) return;
+    hideError(tabId);
+    t.loading = true;
+    updateTabEl(t, pid);
+    showProgress(0.2);
+    $('btn-reload').title = 'Stop';
+    setChromeIcon('btn-reload', 'stop');
+    setStatus('Loading…', 0);
+    clearTimeout(loadTimeouts[key]);
+    loadTimeouts[key] = setTimeout(() => endTabLoad(pid, tabId, null, true), 25000);
+  }
+
+  function endTabLoad(pid, tabId, wv, force) {
+    const key = metaKey(pid, tabId);
+    if (force) loadDepth[key] = 0;
+    else {
+      loadDepth[key] = Math.max(0, (loadDepth[key] || 1) - 1);
+      if (loadDepth[key] > 0) return;
+    }
+    clearTimeout(loadTimeouts[key]);
+    const t = tabRef(tabId, pid);
+    if (!t) return;
+    t.loading = false;
+    if (wv) {
+      try { t.url = wv.getURL() || t.url; } catch { /* webview may be detached */ }
+      try { t.title = wv.getTitle() || t.url; } catch { /* ignore */ }
+    }
+    updateTabEl(t, pid);
+    showProgress(1);
+    setStatus('Done');
+    setChromeIcon('btn-reload', 'reload');
+    $('btn-reload').title = 'Reload (Ctrl+R)';
+    if (pid === activePid && tabId === activeTid[pid]) updateNav();
+    if (!prof(pid).isIncognito && t.url && !t.url.startsWith('about:')) {
+      pushHistory({ url: t.url, title: t.title, favicon: t.favicon });
+    }
+    if (pid === activePid && tabId === activeTid[pid]) {
+      const rd = $('btn-read');
+      const isArticle = t.url && !t.url.startsWith('about:') && !t.url.includes('google.com');
+      rd.style.display = isArticle ? 'inline' : 'none';
+    }
+    const sessPrivacy = prof(pid)?.privacy || {};
+    const fpOn = sessPrivacy.fingerprintProtection ?? settings.fingerprintProtection ?? privacyDoc.fingerprintProtection;
+    if (fpOn && fpScript && wv && t.url && !t.url.startsWith('about:')) {
+      try { wv.executeJavaScript(fpScript, false); } catch {}
+    }
+    scheduleSessionSave();
+  }
+
   function applyTheme(t) {
     const resolved = resolveTheme(t || settings.theme || 'dark');
     document.documentElement.setAttribute('data-theme', resolved);
@@ -2352,43 +2418,11 @@ const B = (() => {
     if (tab.url && !navHist[metaKey(pid, tabId)]) seedNavHist(tabId, tab.url, pid);
     applySiteViewToWv(wv, pid, tabId);
 
-    wv.addEventListener('did-start-loading', () => {
-      const t = tabRef(tabId, pid);
-      if (!t) return;
-      hideError(tabId);
-      t.loading = true;
-      updateTabEl(t, pid);
-      showProgress(0.2);
-      $('btn-reload').title = 'Stop';
-      setChromeIcon('btn-reload', 'stop');
-      setStatus('Loading…', 0);
-    });
-    wv.addEventListener('did-stop-loading', () => {
-      const t = tabRef(tabId, pid);
-      if (!t) return;
-      t.loading = false;
-      try { t.url = wv.getURL() || t.url; } catch { /* webview may be detached */ }
-      try { t.title = wv.getTitle() || t.url; } catch { /* ignore */ }
-      updateTabEl(t, pid);
-      showProgress(1);
-      setStatus('Done');
-      setChromeIcon('btn-reload', 'reload');
-      $('btn-reload').title = 'Reload (Ctrl+R)';
-      if (pid === activePid && tabId === activeTid[pid]) updateNav();
-      if (!prof(pid).isIncognito && t.url && !t.url.startsWith('about:')) {
-        pushHistory({ url: t.url, title: t.title, favicon: t.favicon });
-      }
-      if (pid === activePid && tabId === activeTid[pid]) {
-        const rd = $('btn-read');
-        const isArticle = t.url && !t.url.startsWith('about:') && !t.url.includes('google.com');
-        rd.style.display = isArticle ? 'inline' : 'none';
-      }
-      const sessPrivacy = prof(pid)?.privacy || {};
-      const fpOn = sessPrivacy.fingerprintProtection ?? settings.fingerprintProtection ?? privacyDoc.fingerprintProtection;
-      if (fpOn && fpScript && t.url && !t.url.startsWith('about:')) {
-        try { wv.executeJavaScript(fpScript, false); } catch {}
-      }
-      scheduleSessionSave();
+    wv.addEventListener('did-start-loading', () => beginTabLoad(pid, tabId));
+    wv.addEventListener('did-stop-loading', () => endTabLoad(pid, tabId, wv));
+    wv.addEventListener('did-finish-load', () => {
+      const key = metaKey(pid, tabId);
+      if ((loadDepth[key] || 0) > 0) endTabLoad(pid, tabId, wv, true);
     });
     wv.addEventListener('page-favicon-updated', e => {
       const t = tabRef(tabId, pid);
@@ -2408,7 +2442,7 @@ const B = (() => {
       if (!t) return;
       t.url = e.url;
       recordNavHist(tabId, e.url, pid);
-      if (pid === activePid && tabId === activeTid[pid]) updateNav();
+      if (pid === activePid && tabId === activeTid[pid]) scheduleUpdateNav();
     });
     wv.addEventListener('page-title-updated', e => {
       const t = tabRef(tabId, pid);
@@ -2427,6 +2461,8 @@ const B = (() => {
       if (e.errorCode === -3) return;
       const t = tabRef(tabId, pid);
       if (!t) return;
+      loadDepth[metaKey(pid, tabId)] = 0;
+      clearTimeout(loadTimeouts[metaKey(pid, tabId)]);
       t.loading = false;
       updateTabEl(t, pid);
       showProgress(1);
@@ -2466,6 +2502,9 @@ const B = (() => {
     if (nt) { nt.remove(); delete newtabs[ntKey(p2, tid)]; }
     const mk = metaKey(p2, tid);
     delete navHist[mk];
+    delete loadDepth[mk];
+    clearTimeout(loadTimeouts[mk]);
+    delete loadTimeouts[mk];
     muted.delete(mk); pinned.delete(mk); delete siteViewModes[mk];
   }
 
@@ -2602,7 +2641,8 @@ const B = (() => {
       if(!tab) return;
       hideAllContent();
       tab.url = url; tab.loading = true; updateTabEl(tab, p2);
-      if (p2 === activePid && tid === activeTid[p2]) { $('url-inp').value = url; updateSecIco(url); }
+      if (p2 === activePid && tid === activeTid[p2]) { setUrlBar(url); updateSecIco(url); }
+      loadDepth[metaKey(p2, tid)] = 1;
       removeBootShell();
       const wv = await getOrMakeWV(tab, p2);
       wv.classList.add('act');
@@ -3036,7 +3076,7 @@ const B = (() => {
     setTimeout(() => inp.select(), 10);
     if (!inp.value.trim()) showRecommendations();
   }
-  function urlBlur(inp) { setTimeout(() => { if (document.activeElement !== inp) { inp.value = aTab()?.url || ''; closeSuggest(); } }, 200); }
+  function urlBlur(inp) { setTimeout(() => { if (document.activeElement !== inp) { setUrlBar(aTab()?.url || ''); closeSuggest(); } }, 200); }
 
   function renderSuggestItems(items) {
     const el = $('suggest');
@@ -3083,7 +3123,7 @@ const B = (() => {
       type: 'recommend', group: 'Quick links',
       icon: q.icon, text: esc(q.label), sub: esc(q.url), url: q.url,
     }));
-    renderSuggestItems(items);
+    renderSuggestItems(items.slice(0, 8));
   }
 
   function buildLocalSuggestions(q) {
@@ -3123,31 +3163,33 @@ const B = (() => {
       sub: esc((ENGINES[settings.searchEngine] || ENGINES.google)(q)),
       url: null, q,
     });
-    return items;
+    return items.slice(0, 8);
   }
 
   function urlInput(inp) {
     const q = inp.value.trim();
-    if (!q) { showRecommendations(); return; }
+    if (!q) { closeSuggest(); return; }
     const items = buildLocalSuggestions(q);
     renderSuggestItems(items);
     clearTimeout(suggestTimer);
+    if (q.length < 2 || q.includes('://') || (/^[\w.-]+\.\w{2,}/.test(q) && !/\s/.test(q))) return;
     const reqId = ++suggestReq;
     suggestTimer = setTimeout(async () => {
       const live = inp.value.trim();
-      if (!live || live !== q) return;
+      if (!live || live !== q || live === lastRemoteSuggest) return;
       const remote = await eAPI.searchSuggest(live).catch(() => []);
       if (reqId !== suggestReq || inp.value.trim() !== live) return;
+      lastRemoteSuggest = live;
       const merged = buildLocalSuggestions(live);
-      remote.forEach(s => {
+      remote.slice(0, 4).forEach(s => {
         if (!s || merged.some(x => x.q === s)) return;
         merged.splice(Math.max(0, merged.length - 1), 0, {
           type: 'suggest', group: 'Suggestions',
           icon: '💡', text: esc(s), sub: 'Web search', url: null, q: s,
         });
       });
-      renderSuggestItems(merged);
-    }, 200);
+      renderSuggestItems(merged.slice(0, 8));
+    }, 400);
   }
 
   function moveSuggest(dir) {
@@ -3160,7 +3202,7 @@ const B = (() => {
   }
 
   function _sg(i) { const el=$('suggest'); if(!el._items) return; const it=el._items[i]; navigate(it.url||it.q||''); closeSuggest(); }
-  function closeSuggest() { const el=$('suggest'); el.classList.remove('show'); el._items=null; sgIdx=-1; }
+  function closeSuggest() { const el=$('suggest'); el.classList.remove('show'); el._items=null; sgIdx=-1; lastRemoteSuggest=''; }
 
   // ── READING MODE ─────────────────────────────────────────────────────────
   function toggleReading() {
@@ -4230,7 +4272,7 @@ const B = (() => {
   function updateNav() {
     const tab=aTab(), p=prof();
     const url=tab?.url||'';
-    $('url-inp').value=url; updateSecIco(url);
+    setUrlBar(url); updateSecIco(url);
     $('url-incog').style.display=p.isIncognito?'inline':'none';
     const tid=tab?.id;
     $('btn-back').disabled=!tab?.url||!canNavBack(tid);
