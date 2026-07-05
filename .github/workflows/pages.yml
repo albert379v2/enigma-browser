@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -55,5 +55,59 @@ jobs:
         with:
           path: website
 
+      - name: Pause before deploy
+        run: sleep 12
+
       - id: deployment
         uses: actions/deploy-pages@v4
+        continue-on-error: true
+
+      - name: Wait before retry 1
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 25
+
+      - id: deployment2
+        if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+
+      - name: Wait before retry 2
+        if: steps.deployment.outcome == 'failure' && steps.deployment2.outcome == 'failure'
+        run: sleep 25
+
+      - id: deployment3
+        if: steps.deployment.outcome == 'failure' && steps.deployment2.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+
+      - name: Wait before retry 3
+        if: steps.deployment.outcome == 'failure' && steps.deployment2.outcome == 'failure' && steps.deployment3.outcome == 'failure'
+        run: sleep 25
+
+      - id: deployment4
+        if: steps.deployment.outcome == 'failure' && steps.deployment2.outcome == 'failure' && steps.deployment3.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+
+      - name: Wait before retry 4
+        if: steps.deployment.outcome == 'failure' && steps.deployment2.outcome == 'failure' && steps.deployment3.outcome == 'failure' && steps.deployment4.outcome == 'failure'
+        run: sleep 25
+
+      - id: deployment5
+        if: steps.deployment.outcome == 'failure' && steps.deployment2.outcome == 'failure' && steps.deployment3.outcome == 'failure' && steps.deployment4.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+
+      - name: Verify deployment
+        if: always()
+        run: |
+          if [ "${{ steps.deployment.outcome }}" = "success" ] \
+            || [ "${{ steps.deployment2.outcome }}" = "success" ] \
+            || [ "${{ steps.deployment3.outcome }}" = "success" ] \
+            || [ "${{ steps.deployment4.outcome }}" = "success" ] \
+            || [ "${{ steps.deployment5.outcome }}" = "success" ]; then
+            echo "GitHub Pages deployment succeeded."
+            exit 0
+          fi
+          echo "GitHub Pages deployment failed after 5 attempts."
+          exit 1
