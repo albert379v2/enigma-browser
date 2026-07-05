@@ -110,16 +110,23 @@ button{cursor:pointer}
 .panel-backdrop.show{opacity:1;pointer-events:auto}
 [data-theme="light"] .panel-backdrop{background:rgba(20,15,40,.18)}
 
-/* CRITICAL: webview must fill the content area completely */
+/* CRITICAL: webview must fill the content area — never collapse to 0×0 (breaks Electron paint) */
 webview{
   position:absolute;top:0;left:0;right:0;bottom:0;
+  width:100%;height:100%;
   border:none;outline:none;
+  z-index:1;
 }
 webview:not(.act){
-  display:none!important;visibility:hidden!important;pointer-events:none!important;
-  opacity:0!important;z-index:-1!important;width:0!important;height:0!important;
+  visibility:hidden!important;
+  pointer-events:none!important;
+  z-index:0!important;
 }
-webview.act{display:flex!important;visibility:visible;pointer-events:auto;width:100%!important;height:100%!important;opacity:1!important;z-index:5!important}
+webview.act{
+  visibility:visible!important;
+  pointer-events:auto!important;
+  z-index:5!important;
+}
 
 /* ═══ TITLEBAR ═══ */
 .titlebar{
@@ -2147,22 +2154,6 @@ const B = (() => {
     updateNavT = setTimeout(updateNav, 80);
   }
 
-  function ensureWebviewReady(wv) {
-    if (wv.__enigmaDomReady) return Promise.resolve(wv);
-    return new Promise((resolve) => {
-      const done = () => {
-        wv.removeEventListener('dom-ready', done);
-        wv.__enigmaDomReady = true;
-        resolve(wv);
-      };
-      wv.addEventListener('dom-ready', done);
-    });
-  }
-
-  function isBlankWvUrl(wv) {
-    try { const u = wv.getURL(); return !u || u.startsWith('about:'); } catch { return true; }
-  }
-
   function markTabLoadStart(pid, tabId) {
     const t = tabRef(tabId, pid);
     if (!t) return;
@@ -2185,10 +2176,7 @@ const B = (() => {
     if (!t) return;
     t.loading = false;
     if (wv) {
-      try {
-        const live = wv.getURL();
-        if (live && !live.startsWith('about:')) t.url = live;
-      } catch { /* webview may be detached */ }
+      try { t.url = wv.getURL() || t.url; } catch { /* webview may be detached */ }
       try { t.title = wv.getTitle() || t.url; } catch { /* ignore */ }
     }
     updateTabEl(t, pid);
@@ -2430,14 +2418,19 @@ const B = (() => {
     wv.dataset.pid = pid;
     wv.dataset.tid = tabId;
     wv.setAttribute('allowpopups', settings.blockPopups === false ? 'true' : '');
+    wv.setAttribute('autosize', 'on');
     wv.setAttribute('webpreferences', 'contextIsolation=yes,sandbox=yes,webSecurity=yes,allowRunningInsecureContent=no,enableWebSQL=no');
     wv.setAttribute('partition', p.partition);
-    wv.setAttribute('src', 'about:blank');
+    if (tab.url) wv.setAttribute('src', tab.url);
+    if (tab.url && !navHist[metaKey(pid, tabId)]) seedNavHist(tabId, tab.url, pid);
     applySiteViewToWv(wv, pid, tabId);
 
-    wv.addEventListener('did-start-loading', () => { if (!isBlankWvUrl(wv)) markTabLoadStart(pid, tabId); });
-    wv.addEventListener('did-finish-load', () => { if (!isBlankWvUrl(wv)) finishTabLoad(pid, tabId, wv); });
-    wv.addEventListener('did-stop-loading', () => { if (!isBlankWvUrl(wv)) scheduleFinishTabLoad(pid, tabId, wv); });
+    wv.addEventListener('did-start-loading', () => markTabLoadStart(pid, tabId));
+    wv.addEventListener('did-finish-load', () => {
+      finishTabLoad(pid, tabId, wv);
+      if (pid === activePid && tabId === activeTid[pid]) wv.classList.add('act');
+    });
+    wv.addEventListener('did-stop-loading', () => scheduleFinishTabLoad(pid, tabId, wv));
     wv.addEventListener('page-favicon-updated', e => {
       const t = tabRef(tabId, pid);
       if (!t || !e.favicons?.[0]) return;
@@ -2559,12 +2552,8 @@ const B = (() => {
         return;
       }
       const wv = await getOrMakeWV(liveTab, pid);
-      await ensureWebviewReady(wv);
       if (epoch !== undefined && epoch !== renderEpoch) return;
       wv.classList.add('act');
-      if (liveTab.url && !navHist[metaKey(pid, liveTab.id)]) seedNavHist(liveTab.id, liveTab.url, pid);
-      markTabLoadStart(pid, liveTab.id);
-      try { await wv.loadURL(liveTab.url); } catch { /* did-fail-load handles errors */ }
     });
   }
 
@@ -2653,17 +2642,15 @@ const B = (() => {
       const p2=pid||activePid, tid=tabId||activeTid[p2];
       const tab=tabRef(tid, p2);
       if(!tab) return;
+      const hadWv = !!getWV(tid, p2);
       hideAllContent();
       tab.url = url;
       if (p2 === activePid && tid === activeTid[p2]) { setUrlBar(url); updateSecIco(url); }
       removeBootShell();
       const wv = await getOrMakeWV(tab, p2);
-      await ensureWebviewReady(wv);
       wv.classList.add('act');
       if (!navHist[metaKey(p2, tid)]) seedNavHist(tid, url, p2);
-      markTabLoadStart(p2, tid);
-      updateTabEl(tab, p2);
-      try { await wv.loadURL(url); } catch { /* did-fail-load handles errors */ }
+      if (hadWv) wv.loadURL(url);
       scheduleSessionSave();
     });
   }
