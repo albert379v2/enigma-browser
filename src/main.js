@@ -13,6 +13,9 @@ const { sharedEngine } = require('./filter-engine');
 const {
   initUpdater, checkForUpdates, downloadUpdate, installUpdate, quitAndInstall, getUpdateStatus,
 } = require('./updater');
+const {
+  loadExtensions, saveExtensions, readManifest, applyExtensionsToSession, removeExtensionsFromSession,
+} = require('./extensions');
 
 app.setName('Enigma');
 if (process.platform === 'win32') app.setAppUserModelId('app.enigmabrowser');
@@ -280,7 +283,25 @@ function setActiveUser(userId) {
   if (!userId) return;
   activeUserId = userId;
   appSettings = getSettings();
-  applySessionPolicy(session.fromPartition(mainPartition(userId)));
+  const ses = session.fromPartition(mainPartition(userId));
+  applySessionPolicy(ses);
+  void reloadUserExtensions(ses);
+}
+
+async function reloadUserExtensions(targetSes = null) {
+  if (!activeUserId) return [];
+  const doc = loadExtensions(read, userDir, activeUserId);
+  const ses = targetSes || session.fromPartition(mainPartition(activeUserId));
+  await removeExtensionsFromSession(ses);
+  return applyExtensionsToSession(ses, doc.items);
+}
+
+async function applyExtensionsForSession(sessionId, ephemeral = false) {
+  if (!activeUserId) return [];
+  const doc = loadExtensions(read, userDir, activeUserId);
+  const ses = session.fromPartition(sessionPartition(activeUserId, sessionId, ephemeral));
+  await removeExtensionsFromSession(ses);
+  return applyExtensionsToSession(ses, doc.items);
 }
 function loadAppIcon() {
   const candidates = [];
@@ -779,6 +800,7 @@ ipcMain.handle('session-register', async (_, id, config) => {
   const ses = session.fromPartition(sessionPartition(activeUserId, id, ephemeral));
   applySessionPolicy(ses, id, ephemeral);
   if (cfg.proxy) await applyProxy(ses, cfg.proxy);
+  await applyExtensionsForSession(id, ephemeral);
   return true;
 });
 
@@ -790,6 +812,7 @@ ipcMain.handle('session-create', async (_, id, config) => {
   const ses = session.fromPartition(partition);
   applySessionPolicy(ses, id, ephemeral);
   if (cfg.proxy) await applyProxy(ses, cfg.proxy);
+  await applyExtensionsForSession(id, ephemeral);
   return partition;
 });
 
@@ -1050,6 +1073,74 @@ ipcMain.handle('capture-webview', async (_, id) => {
   if (!wc || wc.isDestroyed()) throw new Error('Page not ready');
   const img = await wc.capturePage();
   return img.toPNG().toString('base64');
+});
+
+ipcMain.handle('search-suggest', async (_, q) => {
+  const query = String(q || '').trim();
+  if (query.length < 2 || query.includes('://')) return [];
+  try {
+    const res = await fetch(`https://ac.duckduckgo.com/ac/?q=${encodeURIComponent(query)}&type=list`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.[1]) ? data[1].slice(0, 6) : [];
+  } catch {
+    return [];
+  }
+});
+
+ipcMain.handle('ext-list', () => loadExtensions(read, userDir, activeUserId).items);
+ipcMain.handle('ext-add', async () => {
+  const r = await dialog.showOpenDialog(mainWin, {
+    title: 'Select unpacked extension folder',
+    properties: ['openDirectory'],
+  });
+  if (r.canceled || !r.filePaths?.[0]) return null;
+  const extPath = r.filePaths[0];
+  const manifest = readManifest(extPath);
+  if (!manifest) throw new Error('Invalid extension — manifest.json not found');
+  const doc = loadExtensions(read, userDir, activeUserId);
+  const item = {
+    id: `ext_${Date.now()}`,
+    name: manifest.name || path.basename(extPath),
+    path: extPath,
+    version: manifest.version || '1.0',
+    enabled: true,
+  };
+  doc.items.push(item);
+  saveExtensions(write, userDir, activeUserId, doc);
+  await reloadUserExtensions();
+  for (const [key] of sessionConfigs) {
+    const sid = key.split(':').pop();
+    const cfg = sessionConfigs.get(key) || {};
+    await applyExtensionsForSession(sid, !!cfg.ephemeral);
+  }
+  return item;
+});
+ipcMain.handle('ext-remove', async (_, id) => {
+  const doc = loadExtensions(read, userDir, activeUserId);
+  doc.items = doc.items.filter(x => x.id !== id);
+  saveExtensions(write, userDir, activeUserId, doc);
+  await reloadUserExtensions();
+  for (const [key] of sessionConfigs) {
+    const sid = key.split(':').pop();
+    const cfg = sessionConfigs.get(key) || {};
+    await applyExtensionsForSession(sid, !!cfg.ephemeral);
+  }
+  return true;
+});
+ipcMain.handle('ext-toggle', async (_, id, enabled) => {
+  const doc = loadExtensions(read, userDir, activeUserId);
+  const item = doc.items.find(x => x.id === id);
+  if (!item) return false;
+  item.enabled = !!enabled;
+  saveExtensions(write, userDir, activeUserId, doc);
+  await reloadUserExtensions();
+  for (const [key] of sessionConfigs) {
+    const sid = key.split(':').pop();
+    const cfg = sessionConfigs.get(key) || {};
+    await applyExtensionsForSession(sid, !!cfg.ephemeral);
+  }
+  return true;
 });
 
 // ── IPC: misc ─────────────────────────────────────────────────────────────────
